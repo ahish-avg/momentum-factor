@@ -1,6 +1,8 @@
 # R/fns/db.R
-# 数据库读取函数：R 层只读，不做任何组合构建/重算逻辑
-# 组合构建、分位分组、聚合全部已在 SQL 层完成（sql/03_signal.sql ~ 05_turnover.sql）
+# Database read functions: the R layer is read-only and performs no
+# portfolio construction or recomputation of its own. All portfolio
+# construction, quintile sorting, and aggregation happen in SQL
+# (sql/03_signal.sql through sql/05_turnover.sql).
 
 db_connect <- function() {
   DBI::dbConnect(
@@ -13,28 +15,29 @@ db_connect <- function() {
   )
 }
 
-#' 读取组合月收益（含 quintile 1-6，6 为 winner-loser）
+#' Read monthly portfolio returns (quintiles 1-6; 6 is the winner-loser spread)
 load_port_returns <- function() {
   con <- db_connect()
   on.exit(DBI::dbDisconnect(con))
   DBI::dbGetQuery(con, "SELECT mth, quintile, param_window, ret, n_stocks, turnover FROM port_returns")
 }
 
-#' 读取 FF 因子
+#' Read Fama-French factors
 load_ff_factors <- function() {
   con <- db_connect()
   on.exit(DBI::dbDisconnect(con))
   DBI::dbGetQuery(con, "SELECT mth, mkt_rf, smb, hml, rmw, cma, rf FROM ff_factors")
 }
 
-#' 读取换手率（按 param_window 分组）
+#' Read turnover (grouped by param_window)
 load_turnover <- function() {
   con <- db_connect()
   on.exit(DBI::dbDisconnect(con))
   DBI::dbGetQuery(con, "SELECT mth, quintile, param_window, turnover FROM turnover")
 }
 
-#' 合并组合收益与 FF 因子（按月对齐），仅做 join，不做任何数值重算
+#' Merge portfolio returns with Fama-French factors (aligned by month);
+#' this is a pure join, no recomputation of any values
 merge_port_ff <- function(port_returns, ff_factors) {
   port_returns$mth <- as.Date(port_returns$mth)
   ff_factors$mth <- as.Date(ff_factors$mth)

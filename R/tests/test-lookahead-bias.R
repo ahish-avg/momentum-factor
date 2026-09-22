@@ -1,9 +1,12 @@
 # R/tests/test-lookahead-bias.R
-# 前视偏差专项检查（具体可执行验证，非空泛声明）
+# Look-ahead bias check (a concrete, executable verification, not a
+# design-principle statement).
 #
-# 验证：任取样本 (permno, mth, param_window)，其 momentum_signal.mom_signal
-# 应严格等于用 [mth - N - S + 1, mth - S] 区间收益重新计算的累乘结果，
-# 且该区间不应包含 skip 期（[mth-S+1, mth]）或当月/未来任何数据。
+# Verification: for any sampled (permno, mth, param_window), its
+# momentum_signal.mom_signal should exactly equal the compounded return
+# independently recomputed from returns in [mth - N - S + 1, mth - S],
+# and that window must never include the skip period ([mth-S+1, mth])
+# or any current-month/future data.
 
 library(testthat)
 
@@ -60,7 +63,7 @@ test_that("mom_signal window never includes skip-period or current month data", 
 
   window_end <- as.Date(r$mth) - months(r$skip)
   expect_true(window_end < as.Date(r$mth))
-  # skip 期本身（[mth-skip+1, mth]）不应出现在窗口内
+  # The skip period itself ([mth-skip+1, mth]) must never appear in the window
   forbidden_start <- as.Date(r$mth) - months(r$skip - 1)
   expect_true(window_end < forbidden_start || r$skip == 0)
 })

@@ -1,41 +1,50 @@
 -- ============================================================
 -- 02_load_wrds.sql
--- 灌入 WRDS/CRSP 个股月度收益 + FF 因子
+-- Load WRDS/CRSP individual stock monthly returns + Fama-French factors
 --
--- 【CIZ 新版字段映射】CRSP 于 2024-11-22 更新了数据结构（旧版 SIZ -> 新版 CIZ），
--- 表名、变量名均有变化。本脚本基于 CIZ 新版 Monthly Stock File 的实际字段：
---   permno       -> permno         (不变)
---   mthcaldt     -> mth            (月度日历日期，即月末日期)
---   mthret       -> ret_adj        (Monthly Total Return，含分红再投资；
---                                    退市月的收益已经并入该字段，不再需要
---                                    像旧版一样单独 join 退市表、单独合并 dlret)
---   mthdelflg    -> delflg         (月度退市标志位，用于统计/披露幸存者偏差，
---                                    不用于计算，仅作诚实披露用途)
+-- [CIZ field mapping] CRSP migrated its data structure on 2024-11-22
+-- (legacy SIZ -> new CIZ format); table and variable names changed.
+-- This script targets the actual CIZ Monthly Stock File fields:
+--   permno       -> permno         (unchanged)
+--   mthcaldt     -> mth            (monthly calendar date, i.e. end-of-month)
+--   mthret       -> ret_adj        (Monthly Total Return, includes reinvested
+--                                    dividends; delisting-month returns are
+--                                    already folded in, so unlike the legacy
+--                                    format there is no separate delisting
+--                                    table to join or dlret to merge)
+--   mthdelflg    -> delflg         (monthly delisting flag; retained for
+--                                    disclosure/statistics, not used in
+--                                    any calculation)
 --
--- 【已核实】股票范围过滤 shrcd IN (10,11) 在 CIZ 新版中由 securitytype /
--- securitysubtype 两个字段组合表达，已用真实 WRDS 查询结果交叉验证：
---   普通股（AAPL/MSFT/IBM）：securitytype='EQTY', securitysubtype='COM', sharetype='NS'
---   ETF（SPY/VNQ）        ：securitytype='FUND', securitysubtype='ETF', sharetype='NS'
--- 区分逻辑落在 securitytype 这一层（EQTY vs FUND），securitysubtype 做进一步
--- 确认；sharetype 两类取值相同（'NS'），不参与筛选，不作为过滤条件。
--- 过滤条件：securitytype = 'EQTY' AND securitysubtype = 'COM'
+-- [Verified] The legacy shrcd IN (10,11) universe filter is expressed in
+-- CIZ via the combination of securitytype / securitysubtype, cross-validated
+-- against real WRDS query results:
+--   Common stock (AAPL/MSFT/IBM): securitytype='EQTY', securitysubtype='COM', sharetype='NS'
+--   ETF (SPY/VNQ):                securitytype='FUND', securitysubtype='ETF', sharetype='NS'
+-- The distinction lives at the securitytype level (EQTY vs FUND);
+-- securitysubtype provides a secondary confirmation. sharetype is identical
+-- across both classes ('NS') and is therefore not used as a filter.
+-- Filter condition: securitytype = 'EQTY' AND securitysubtype = 'COM'
 --
--- 前置：WRDS 导出的原始 CSV 已经过预处理（重排/精简列）后放到 data/ 目录：
---   data/crsp_monthly.csv   来源: WRDS CRSP Annual Update -> Stock-Version 2
---                            (CIZ) -> Monthly Stock File, 全库检索导出，
---                            已从全字段导出精简为:
+-- Prerequisite: the raw WRDS export CSVs have been preprocessed (columns
+-- reordered/trimmed) and placed under data/:
+--   data/crsp_monthly.csv   Source: WRDS CRSP Annual Update -> Stock-Version 2
+--                            (CIZ) -> Monthly Stock File, full-database query,
+--                            trimmed from the full field export down to:
 --                            permno, mth (YYYY-MM-DD), securitytype,
 --                            securitysubtype, sharetype, ret, delflg
---   data/ff_factors.csv     来源: WRDS Fama-French Portfolios -> 5 Factors
---                            Plus Momentum - Monthly Frequency，已重排列为:
+--   data/ff_factors.csv     Source: WRDS Fama-French Portfolios -> 5 Factors
+--                            Plus Momentum - Monthly Frequency, columns
+--                            reordered to:
 --                            mth (YYYY-MM-DD), mkt_rf, smb, hml, rmw, cma, rf
---                            （原始 umd 动量因子列已丢弃，本轮不使用）
+--                            (the original umd momentum-factor column was
+--                            dropped; not used in this study)
 --
--- 需要 secure_file_priv 允许的路径，或者用 --local-infile 客户端参数。
+-- Requires a secure_file_priv-permitted path, or the --local-infile client flag.
 -- ============================================================
 
 -- ------------------------------------------------------------
--- 1. 灌入原始 CRSP 数据到 staging 表，再过滤写入 stock_monthly
+-- 1. Load raw CRSP data into a staging table, then filter into stock_monthly
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS stg_crsp_monthly;
 CREATE TABLE stg_crsp_monthly (
@@ -44,8 +53,8 @@ CREATE TABLE stg_crsp_monthly (
   securitytype    VARCHAR(16),
   securitysubtype VARCHAR(16),
   sharetype       VARCHAR(16),
-  ret             DECIMAL(18,8),   -- mthret：月度总收益，已含退市月收益
-  delflg          VARCHAR(8)       -- mthdelflg：月度退市标志位，仅作披露用途
+  ret             DECIMAL(18,8),   -- mthret: monthly total return, already includes delisting-month return
+  delflg          VARCHAR(8)       -- mthdelflg: monthly delisting flag, disclosure only
 ) ENGINE=InnoDB;
 
 LOAD DATA LOCAL INFILE 'data/crsp_monthly.csv'
@@ -56,37 +65,54 @@ IGNORE 1 ROWS
 (permno, mth, securitytype, securitysubtype, sharetype, ret, @delflg)
 SET delflg = IF(@delflg = '' OR @delflg IS NULL, NULL, @delflg);
 
--- 股票范围过滤：仅普通股（EQTY/COM），排除 ETF（FUND/ETF）、REIT/ADR/优先股等
--- 取值已用真实数据交叉验证（AAPL/MSFT/IBM vs SPY/VNQ），见文件头部注释
+-- Optional pre-check: confirm the MAX(ret) dedup assumption below actually
+-- holds (i.e. duplicate (permno, mth) rows always carry an identical ret).
+-- Run this BEFORE the INSERT if you want to audit the raw data; it should
+-- return zero rows. If it returns any rows, do not trust MAX(ret) blindly —
+-- decide on an explicit tie-breaking rule instead.
+--   SELECT permno, mth, MIN(ret) AS min_ret, MAX(ret) AS max_ret
+--   FROM stg_crsp_monthly
+--   WHERE securitytype = 'EQTY' AND securitysubtype = 'COM'
+--   GROUP BY permno, mth
+--   HAVING MIN(ret) <> MAX(ret);
+
+-- Universe filter: common stock only (EQTY/COM), excluding ETFs (FUND/ETF),
+-- REITs/ADRs/preferred shares, etc. Values cross-validated against real
+-- data (AAPL/MSFT/IBM vs SPY/VNQ), see file header comment.
 --
--- 去重说明：CIZ 官方文档提示，若单只证券在同一月发生多笔分配事件（如多次
--- 分红），会产生 (permno, mth) 重复观测。实测数据中确认存在完全重复的行
--- （如 permno=10001, mth=1994-06-30 出现两条完全相同记录）。用 GROUP BY
--- 折叠去重，同一 (permno, mth, securitytype, securitysubtype) 下 ret 取
--- MAX（重复行数值相同，MAX 只是聚合函数占位，不代表business逻辑上的选择）。
+-- Deduplication note: CIZ documentation states that a security with more
+-- than one distribution event in the same month can produce duplicate
+-- (permno, mth) observations. Confirmed in practice (e.g. permno=10001 at
+-- 1994-06-30 has two fully identical rows). Collapsed via GROUP BY; ret
+-- uses MAX() under the assumption that duplicate rows carry identical
+-- values (validated for the observed case above, but not exhaustively
+-- verified across the full dataset — see the pre-check query above).
 INSERT INTO stock_monthly (permno, mth, shrcd, ret, dlret, ret_adj)
 SELECT
   permno,
   mth,
-  NULL AS shrcd,      -- CIZ 无直接对应字段，字段保留以兼容旧 schema，不再使用
+  NULL AS shrcd,      -- No direct CIZ equivalent; column retained for schema compatibility, unused
   MAX(ret) AS ret,
-  NULL AS dlret,      -- CIZ 退市收益已并入 ret，不再单独存储
-  MAX(ret) AS ret_adj  -- mthret 本身已是含退市月收益的总收益，直接作为 ret_adj
+  NULL AS dlret,      -- CIZ delisting return is already folded into ret; not stored separately
+  MAX(ret) AS ret_adj  -- mthret is already the total return including delisting-month return
 FROM stg_crsp_monthly
-WHERE securitytype = 'EQTY'          -- 已核实：普通股（AAPL/MSFT/IBM 验证过）
-  AND securitysubtype = 'COM'        -- 已核实：区别于 ETF（FUND/ETF，SPY/VNQ 验证过）
+WHERE securitytype = 'EQTY'          -- Verified: common stock (validated with AAPL/MSFT/IBM)
+  AND securitysubtype = 'COM'        -- Verified: distinguishes from ETFs (FUND/ETF, validated with SPY/VNQ)
 GROUP BY permno, mth;
 
 DROP TABLE stg_crsp_monthly;
 
 -- ------------------------------------------------------------
--- 2. 灌入 FF 因子（本项目实际从 WRDS 的 Fama-French Portfolios ->
---    5 Factors Plus Momentum - Monthly Frequency 下载，非官网 CSV）。
---    已核实：WRDS 导出的数值本身就是小数形式（如 -0.078000），
---    不是官网 CSV 那种百分比乘以100的格式，因此不需要除以100转换。
---    原始列名 dateff/mktrf/smb/hml/rmw/cma/rf/umd，已在预处理阶段
---    重排为 mth/mkt_rf/smb/hml/rmw/cma/rf（umd 动量因子暂未入库，
---    schema 未留字段，本轮回归不使用）。
+-- 2. Load Fama-French factors (downloaded from WRDS's Fama-French
+--    Portfolios -> 5 Factors Plus Momentum - Monthly Frequency,
+--    not the official Ken French website CSV).
+--    Verified: the WRDS export values are already in decimal form
+--    (e.g. -0.078000), unlike the official website CSV which uses
+--    percent-times-100 units, so no /100 conversion is needed here.
+--    Original column names dateff/mktrf/smb/hml/rmw/cma/rf/umd were
+--    reordered during preprocessing to mth/mkt_rf/smb/hml/rmw/cma/rf
+--    (the umd momentum factor is not loaded; no schema column exists
+--    for it and it is not used in this study's regressions).
 -- ------------------------------------------------------------
 LOAD DATA LOCAL INFILE 'data/ff_factors.csv'
 INTO TABLE ff_factors
@@ -96,11 +122,11 @@ IGNORE 1 ROWS
 (mth, mkt_rf, smb, hml, rmw, cma, rf);
 
 -- ------------------------------------------------------------
--- 3. 数据校验断言（行数/去重/缺失比例）
---    以 SELECT 结果的形式输出，供人工检查或脚本抓取
+-- 3. Data validation assertions (row counts / dedup / missing ratios)
+--    Output as SELECT results for manual inspection or scripted checks
 -- ------------------------------------------------------------
 
--- 3a. 行数与日期范围
+-- 3a. Row count and date range
 SELECT
   COUNT(*)              AS n_rows,
   COUNT(DISTINCT permno) AS n_permno,
@@ -108,33 +134,42 @@ SELECT
   MAX(mth)              AS max_mth
 FROM stock_monthly;
 
--- 3b. (permno, mth) 重复检查（应为 0 行，因为是主键，此处校验 staging 阶段是否有丢弃）
+-- 3b. (permno, mth) duplicate check (should be 0 rows, since it's the
+--     primary key; this checks whether any dedup was dropped at the
+--     staging step)
 SELECT permno, mth, COUNT(*) AS n
 FROM stock_monthly
 GROUP BY permno, mth
 HAVING COUNT(*) > 1;
 
--- 3c. 缺失值比例（ret_adj）
+-- 3c. Missing-value ratio (ret_adj)
 SELECT
   SUM(ret_adj IS NULL) / COUNT(*) AS pct_ret_adj_null,
   COUNT(*)                        AS n_rows
 FROM stock_monthly;
 
--- 3d. 退市月收益披露（CIZ 已将退市收益并入 mthret，此处仅做统计披露，
---     不做「合并前后差异」计算 —— 因为 CIZ 不再提供未合并版本）
---     以下改为：统计退市月样本占比及其平均收益，作为幸存者偏差处理的诚实披露
+-- 3d. Delisting-month return disclosure (CIZ already folds delisting
+--     returns into mthret, so we no longer compute a "before/after merge"
+--     comparison as under the legacy format — that comparison is not
+--     possible since CIZ does not expose an unmerged version).
+--     Instead: report overall sample size and mean return as an honest
+--     disclosure point for survivorship-bias handling.
 SELECT
   COUNT(*) AS n_total_rows,
-  0 AS n_delisting_rows_placeholder,  -- TODO: 待确认 delflg 实际取值后，
-                                       -- 改为 SUM(delflg = '<实际退市标志值>')
+  0 AS n_delisting_rows_placeholder,  -- TODO: once the exact delflg values
+                                       -- are confirmed, replace with
+                                       -- SUM(delflg = '<actual delisting flag value>')
   AVG(ret_adj) AS mean_ret_all
 FROM stock_monthly;
 
--- 3e. 股票范围过滤生效检查（应只剩普通股，此处先检查原始 staging 类型分布，
---     需在 LOAD DATA 后、DROP staging 表前临时执行以下查询做核实，
---     生产运行时该表已被清理，此处仅作文档示例保留）
+-- 3e. Universe filter effectiveness check (should contain only common
+--     stock; run this against the staging table's type distribution
+--     BEFORE it is dropped if you want to audit the raw composition;
+--     kept here for documentation purposes only, since the staging
+--     table has already been dropped by the time this script runs
+--     end-to-end)
 -- SELECT DISTINCT securitytype, securitysubtype, sharetype FROM stg_crsp_monthly;
 
--- 3f. FF 因子表行数/日期范围
+-- 3f. Fama-French factor table row count and date range
 SELECT COUNT(*) AS n_rows, MIN(mth) AS min_mth, MAX(mth) AS max_mth
 FROM ff_factors;

@@ -1,6 +1,8 @@
 # R/tests/test-data-validation.R
-# 数据加载与校验：行数、主键唯一性、缺失比例合理范围
-# 需要连通的 MySQL 实例（MOMENTUM_DB_* 环境变量），CI 中由 GitHub Actions 服务容器提供
+# Data loading and validation: row counts, primary key uniqueness,
+# missing-value ratios within a sane range.
+# Requires a reachable MySQL instance (MOMENTUM_DB_* env vars); provided
+# by a GitHub Actions service container in CI.
 
 library(testthat)
 
@@ -25,10 +27,12 @@ test_that("stock_monthly contains only common stock (CIZ: securitytype/securitys
   skip_if_no_db()
   con <- db_connect()
   on.exit(DBI::dbDisconnect(con))
-  # CIZ 新版没有 shrcd 字段（灌数时置为 NULL，见 sql/02_load_wrds.sql），
-  # 股票范围过滤已在灌数阶段用 securitytype='EQTY' AND securitysubtype='COM'
-  # 完成，staging 表已丢弃，此处改为验证 shrcd 字段确实全为 NULL（符合预期，
-  # 不代表数据缺失，是 CIZ 迁移后该字段不再使用的正常状态）
+  # The CIZ data format has no shrcd field (set to NULL at load time,
+  # see sql/02_load_wrds.sql); the universe filter is already applied
+  # during loading via securitytype='EQTY' AND securitysubtype='COM',
+  # and the staging table has been dropped. This test instead verifies
+  # that shrcd is indeed entirely NULL (expected — not a data gap, just
+  # the normal state of an unused legacy column after the CIZ migration).
   shrcd_vals <- DBI::dbGetQuery(con, "SELECT DISTINCT shrcd FROM stock_monthly")$shrcd
   expect_true(all(is.na(shrcd_vals)))
 })

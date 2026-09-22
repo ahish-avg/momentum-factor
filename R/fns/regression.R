@@ -1,8 +1,10 @@
 # R/fns/regression.R
-# FF3 回归 + Newey-West t 值（学术严谨性关键点，不用普通 OLS t 值）
+# FF3 regression + Newey-West t-statistics (a key academic rigor point;
+# plain OLS t-statistics are not used)
 
-#' 对单个 param_window 的 winner-loser (quintile=6) 组合做 FF3 回归
-#' 返回 alpha、beta 及其 Newey-West t 值
+#' Run an FF3 regression on the winner-loser (quintile=6) portfolio for
+#' a single param_window.
+#' Returns alpha, betas, and their Newey-West t-statistics.
 run_ff3_regressions <- function(merged_data, param_windows) {
   results <- lapply(param_windows, function(pw) {
     d <- merged_data[merged_data$param_window == pw & merged_data$quintile == 6, ]
@@ -17,7 +19,8 @@ run_ff3_regressions <- function(merged_data, param_windows) {
 
     fit <- lm(excess_ret ~ mkt_rf + smb + hml, data = d)
 
-    # Newey-West 稳健标准误，lag 用经验法则 floor(4*(T/100)^(2/9))
+    # Newey-West robust standard errors; lag chosen via the rule of
+    # thumb floor(4*(T/100)^(2/9))
     n <- nrow(d)
     nw_lag <- max(1, floor(4 * (n / 100)^(2 / 9)))
     nw_vcov <- sandwich::NeweyWest(fit, lag = nw_lag, prewhite = FALSE, adjust = TRUE)
@@ -33,7 +36,8 @@ run_ff3_regressions <- function(merged_data, param_windows) {
   do.call(rbind, results)
 }
 
-#' 夏普比率、最大回撤（PerformanceAnalytics），针对 winner-loser 组合
+#' Sharpe ratio and maximum drawdown (via PerformanceAnalytics) for the
+#' winner-loser portfolio
 compute_risk_metrics <- function(merged_data, param_windows) {
   results <- lapply(param_windows, function(pw) {
     d <- merged_data[merged_data$param_window == pw & merged_data$quintile == 6, ]
@@ -49,8 +53,10 @@ compute_risk_metrics <- function(merged_data, param_windows) {
   do.call(rbind, results)
 }
 
-#' 汇总参数稳健性表：alpha / NW t 值 / 夏普 并排展示
-#' 诚实原则：不显著的窗口也照写，不做筛选或美化
+#' Assemble the parameter robustness table: alpha / Newey-West t / Sharpe
+#' side by side.
+#' Honesty principle: windows with insignificant alphas are reported
+#' as-is, with no filtering or cosmetic adjustment.
 build_robustness_table <- function(reg_results, risk_metrics) {
   alpha_rows <- reg_results[reg_results$term == "(Intercept)", ]
   merged <- dplyr::left_join(alpha_rows, risk_metrics, by = "param_window")

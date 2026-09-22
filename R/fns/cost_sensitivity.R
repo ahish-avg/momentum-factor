@@ -1,10 +1,11 @@
 # R/fns/cost_sensitivity.R
-# 交易成本敏感性：换手率 x 0-50bps 成本区间 -> alpha 衰减曲线，标出 breakeven cost
+# Transaction cost sensitivity: turnover x 0-50bps cost range -> alpha
+# decay curve, identifying the breakeven cost
 
-#' net_alpha(cost) = gross_alpha - turnover * cost * 2  (买卖双边)
-#' cost 以小数表示（例如 0.0050 = 50bps）
+#' net_alpha(cost) = gross_alpha - turnover * cost * 2  (round-trip, buy + sell)
+#' cost is expressed as a decimal (e.g. 0.0050 = 50bps)
 run_cost_sensitivity <- function(merged_data, turnover_by_window, param_windows) {
-  costs <- seq(0, 0.0050, by = 0.0001)  # 0-50bps，步长 1bp
+  costs <- seq(0, 0.0050, by = 0.0001)  # 0-50bps, 1bp steps
 
   results <- lapply(param_windows, function(pw) {
     d <- merged_data[merged_data$param_window == pw & merged_data$quintile == 6, ]
@@ -27,7 +28,8 @@ run_cost_sensitivity <- function(merged_data, turnover_by_window, param_windows)
   })
   out <- do.call(rbind, results[!sapply(results, is.null)])
 
-  # breakeven cost：net_alpha 首次 <= 0 的成本水平（线性插值近似）
+  # Breakeven cost: the cost level at which net_alpha first hits <= 0
+  # (approximated via linear interpolation)
   breakeven <- do.call(rbind, lapply(param_windows, function(pw) {
     d <- out[out$param_window == pw, ]
     if (nrow(d) == 0 || all(d$net_alpha > 0)) {

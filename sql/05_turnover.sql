@@ -1,18 +1,25 @@
 -- ============================================================
 -- 05_turnover.sql
--- 换手率：相邻两期同一 (quintile, param_window) 分位成员集合差异计数
--- 供 P4 交易成本敏感性分析使用
+-- Turnover: membership difference between consecutive periods within
+-- the same (quintile, param_window), used for transaction cost
+-- sensitivity analysis
 --
--- 定义：turnover_t = |members_t \ members_{t-1}| / |members_t|
---   即当月分位成员中，上月不在该分位（新进场）的比例
--- 用 holding_batches 展开后的当月成员集合（而非 formation 原始信号），
--- 因为持仓组合的实际成分是重叠批次的并集，换手率应反映实际持仓变化。
+-- Definition: turnover_t = |members_t \ members_{t-1}| / |members_t|
+--   i.e. the fraction of this month's quintile membership that was not
+--   in the same quintile last month (newly entered positions).
+-- Uses the expanded monthly membership set from holding_batches (not
+-- the raw formation-time signal ranking), because the actual composition
+-- of a held portfolio is the union of overlapping batches, and turnover
+-- should reflect the realized change in holdings, not just the change
+-- in newly-formed signal rankings.
 -- ============================================================
 
 TRUNCATE TABLE turnover;
 
--- 用普通表（非 TEMPORARY）承载成员集合，避开 MySQL 对 TEMPORARY TABLE
--- 在同一查询内被自 JOIN + 相关子查询重复引用时报 "Can't reopen table" 的限制。
+-- Use a regular table (not TEMPORARY) to hold the membership set, to
+-- avoid MySQL's "Can't reopen table" error, which occurs when a
+-- TEMPORARY TABLE is referenced more than once within the same query
+-- via a self-join plus correlated subquery.
 DROP TABLE IF EXISTS stg_members;
 CREATE TABLE stg_members (
   mth          DATE,
@@ -31,9 +38,12 @@ SELECT
   ) AS prev_mth
 FROM (SELECT DISTINCT hold_mth, quintile, param_window, permno FROM holding_batches) dedup;
 
--- 用 LAG 得到每个成员上一次出现在该 (quintile, param_window) 的月份后，
--- 换手率 = 当月新进场成员数（上月不在同一分位）/ 当月成员总数。
--- 新进场判定：该成员的 prev_mth 不是"上一个自然月"（即上月未持仓该分位）。
+-- After using LAG to find each member's last appearance in this
+-- (quintile, param_window), turnover = (count of members newly entering
+-- this quintile this month) / (total members this month). "Newly
+-- entering" means the member's prev_mth is not "the immediately
+-- preceding calendar month" (i.e. it was not held in this quintile last
+-- month).
 DROP TABLE IF EXISTS stg_prev_month_by_window;
 CREATE TABLE stg_prev_month_by_window (
   mth          DATE,
@@ -59,7 +69,8 @@ GROUP BY m.mth, m.quintile, m.param_window;
 DROP TABLE stg_members;
 DROP TABLE stg_prev_month_by_window;
 
--- 把换手率同步写回 port_returns.turnover，方便 R 层一次读表拿全部字段
+-- Write turnover back into port_returns.turnover, so the R layer can
+-- read every field it needs from a single table.
 UPDATE port_returns pr
 JOIN turnover t
   ON t.mth = pr.mth AND t.quintile = pr.quintile AND t.param_window = pr.param_window

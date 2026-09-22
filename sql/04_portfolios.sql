@@ -1,18 +1,26 @@
 -- ============================================================
 -- 04_portfolios.sql
--- 分位分组 + 重叠持仓（JT1993 overlapping holding periods）组合收益
+-- Quintile sorting + overlapping holding periods (JT1993-style)
+-- portfolio returns
 --
--- 逻辑：
--- 1. 每月每个 param_window 下，用 NTILE(5) 按 mom_signal 分五档（quintile 1=loser..5=winner）
--- 2. 每个 formation_mth 的建仓批次，在接下来 K=formation(N) 个月内都贡献一份持仓权重
---    （K 取 formation 窗口月数 N，即 JT1993 标准做法：持有期 = formation 期长度）
--- 3. holding_batches 展开每个批次到其持有的每个 hold_mth
--- 4. port_returns：按 (hold_mth, quintile, param_window) 聚合 AVG(ret)
---    即当月组合收益 = 当月仍在持仓期内的所有批次的等权平均（批次间等权，批次内股票等权）
+-- Logic:
+-- 1. Within each month/param_window, use NTILE(5) on mom_signal to sort
+--    stocks into quintiles (quintile 1 = losers .. 5 = winners).
+-- 2. Each formation_mth batch contributes holding weight for the
+--    following K=formation(N) months (K equals the formation window
+--    length N, i.e. standard JT1993 practice: holding period length =
+--    formation period length).
+-- 3. holding_batches expands each batch into one row per month it holds.
+-- 4. port_returns: aggregate AVG(ret) by (hold_mth, quintile, param_window),
+--    i.e. the monthly portfolio return is a single-layer equal-weighted
+--    average across all individual stock observations still within their
+--    holding period that month (equal-weighted by stock, not by batch;
+--    see the note in step 3 below for why batch-level pre-averaging would
+--    introduce bias).
 -- ============================================================
 
 -- ------------------------------------------------------------
--- 1. 分位分组：在 momentum_signal 基础上打 quintile 标签
+-- 1. Quintile sorting: tag momentum_signal rows with a quintile label
 -- ------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS tmp_ranked_signal;
 CREATE TEMPORARY TABLE tmp_ranked_signal AS
@@ -25,13 +33,15 @@ WHERE mom_signal IS NOT NULL;
 CREATE INDEX idx_trs ON tmp_ranked_signal (formation_mth, param_window);
 
 -- ------------------------------------------------------------
--- 2. 建仓批次展开表：formation_mth 批次持有 K=formation 个月
---    hold_mth = formation_mth + 1 月 ... formation_mth + formation 月
---    （信号在 formation_mth 生成，t+1 月开始建仓持有，与 03_signal 的 LAG 对齐语义一致）
+-- 2. Holding-batch expansion: each formation_mth batch holds for K=formation months
+--    hold_mth = formation_mth + 1 month ... formation_mth + formation months
+--    (the signal is generated at formation_mth; the position is entered
+--    starting month t+1, consistent with the LAG alignment semantics
+--    used in 03_signal.sql)
 -- ------------------------------------------------------------
 TRUNCATE TABLE holding_batches;
 
--- 用一个 1..12 的偏移辅助表展开持有月份（MAX formation = 12，够用）
+-- A 1..12 offset helper table to expand holding months (max formation = 12, sufficient here)
 DROP TEMPORARY TABLE IF EXISTS tmp_offsets;
 CREATE TEMPORARY TABLE tmp_offsets (k INT PRIMARY KEY);
 INSERT INTO tmp_offsets (k) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12);
@@ -56,9 +66,23 @@ DROP TEMPORARY TABLE tmp_offsets;
 DROP TEMPORARY TABLE tmp_ranked_signal;
 
 -- ------------------------------------------------------------
--- 3. 聚合成组合月收益：port_returns
---    每个 (hold_mth, quintile, param_window) 下，先按批次(formation_mth)算批次内等权均值，
---    再对所有仍在持仓期内的批次取等权均值（JT1993 标准两层等权）
+-- 3. Aggregate into monthly portfolio returns: port_returns
+--    For each (hold_mth, quintile, param_window), take a single-layer
+--    equal-weighted average across all stock-level return observations
+--    still within their holding period that month (equal-weighted by
+--    stock, not by formation batch).
+--
+--    [Previously fixed defect] An earlier version of this script computed
+--    AVG(ret) within each formation batch first, then AVG(batch_ret)
+--    across batches — a two-layer average that implicitly gives each
+--    formation batch equal weight instead of giving each stock equal
+--    weight. Empirically, active batch size varies by roughly 13% in
+--    steady state (e.g. 2000-06-30, F12_S1, quintile 1: 9 active batches
+--    ranging from 1243 to 1409 stocks), so the two-layer average would
+--    systematically distort portfolio returns. This has been corrected
+--    to a single-layer AVG(ret) directly over all individual stock
+--    observations that month, correctly implementing the standard
+--    "equal-weighted by stock" JT1993 convention.
 -- ------------------------------------------------------------
 TRUNCATE TABLE port_returns;
 
@@ -67,20 +91,13 @@ SELECT
   hold_mth,
   quintile,
   param_window,
-  AVG(batch_ret) AS ret,
-  SUM(batch_n)   AS n_stocks
-FROM (
-  SELECT
-    hold_mth, quintile, param_window, formation_mth,
-    AVG(ret)   AS batch_ret,
-    COUNT(*)   AS batch_n
-  FROM holding_batches
-  GROUP BY hold_mth, quintile, param_window, formation_mth
-) batch_level
+  AVG(ret)   AS ret,
+  COUNT(*)   AS n_stocks
+FROM holding_batches
 GROUP BY hold_mth, quintile, param_window;
 
 -- ------------------------------------------------------------
--- 4. Winner-Loser (5-1) 组合，写入 quintile = 6
+-- 4. Winner-Loser (5-1) portfolio, written as quintile = 6
 -- ------------------------------------------------------------
 INSERT INTO port_returns (mth, quintile, param_window, ret, n_stocks)
 SELECT
@@ -93,13 +110,15 @@ JOIN port_returns l
 WHERE w.quintile = 5 AND l.quintile = 1;
 
 -- ------------------------------------------------------------
--- 验证查询：重叠持仓正确性抽样检查
--- 某月组合成分股数量应 ≈ 该月 5 档股票数（因为是均值合成非累加）
+-- Verification queries: overlapping-holding-period correctness sampling
+-- A given month's portfolio constituent count should be roughly the
+-- monthly quintile size, since it's a mean, not a sum, across batches.
 -- ------------------------------------------------------------
 -- SELECT mth, quintile, param_window, n_stocks FROM port_returns
 -- WHERE param_window = 'F12_S1' ORDER BY mth LIMIT 20;
 
--- holding_batches 展开后同一批次不应对同一 (permno, hold_mth) 重复计入两次
+-- After expansion, holding_batches should never double-count the same
+-- (permno, hold_mth) within the same batch:
 -- SELECT formation_mth, hold_mth, permno, param_window, COUNT(*)
 -- FROM holding_batches
 -- GROUP BY formation_mth, hold_mth, permno, param_window

@@ -1,5 +1,7 @@
 # R/tests/test-signal-boundary.R
-# 边界情况：时间序列开头不足窗口长度的股票应被排除（mom_signal 计算层面）
+# Boundary case: stocks with less history than the window length at the
+# start of the time series should be excluded (at the mom_signal
+# computation layer).
 
 library(testthat)
 
@@ -14,7 +16,7 @@ test_that("stocks with insufficient formation-window history produce no mom_sign
   con <- db_connect()
   on.exit(DBI::dbDisconnect(con))
 
-  # 找一个刚上市不久的 permno（历史长度 < 12 个月）
+  # Find a recently-listed permno (history shorter than 12 months)
   short_hist <- DBI::dbGetQuery(con, "
     SELECT permno, COUNT(*) AS n_months, MIN(mth) AS first_mth
     FROM stock_monthly

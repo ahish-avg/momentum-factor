@@ -1,5 +1,5 @@
 # R/fns/plots.R
-# 绘图函数：参数稳健性对比 + 交易成本衰减曲线
+# Plotting functions: parameter robustness comparison + transaction cost decay curve
 
 plot_robustness_table <- function(robustness_table) {
   path <- "output/robustness_alpha.png"
