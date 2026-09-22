@@ -1,0 +1,15 @@
+data/
+output/*.png
+*.Rproj.user/
+.Rhistory
+.RData
+.Rproj.user
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+.env
+*.log
