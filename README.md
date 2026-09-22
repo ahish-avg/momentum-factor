@@ -98,7 +98,7 @@ momentum-factor/
 │   ├── fns/                 Regression, risk metrics, cost sensitivity, plotting
 │   └── tests/                testthat suite: data validation, look-ahead-bias check, boundary cases
 ├── data/                    WRDS exports (gitignored; must be supplied locally)
-├── output/                  Generated figures
+├── output/                  Generated figures (static PNG + interactive HTML)
 ├── .github/workflows/       CI: schema smoke test + testthat suite
 └── README.md / README.zh-CN.md
 ```
@@ -117,6 +117,17 @@ Sample: 1990-01 to 2025-12, 2,667,625 stock-month observations, 23,700 distinct 
 **Headline finding.** The classical 12-1 formation-skip specification of Jegadeesh & Titman (1993) does *not* replicate in this 1990–2025 full-universe U.S. sample: the winner-loser alpha is negative, statistically insignificant, and accompanied by a maximum drawdown exceeding 85%. The only parameter configuration that is both statistically significant (at the 1% level under Newey-West standard errors) and economically robust to transaction costs is the shorter **6-month formation, 1-month skip** window.
 
 A supplementary diagnostic (holding-period return decomposed by month within the holding period) shows that the momentum effect is concentrated in the first one to two months after formation — winners outperform losers in these early months — but decays and frequently reverses over the remainder of a 12-month holding period. Longer holding windows therefore average in a larger share of the decayed/reversed period, which fully offsets the early-period alpha for the 12-month specifications. This is reported as a substantive finding, not a data or implementation artifact; it is consistent with the well-documented literature on momentum crash and decay dynamics, though a formal decomposition by sub-period or market regime is left to future work (§6).
+
+### 5.1 Visualizations
+
+Each figure is available in both a static (PNG) and an interactive (self-contained HTML, hover for exact values) form:
+
+| Figure | Static | Interactive |
+|---|---|---|
+| Winner-loser alpha by parameter window, with Newey-West 95% confidence intervals | [`output/robustness_alpha.png`](output/robustness_alpha.png) | [`output/robustness_alpha.html`](output/robustness_alpha.html) |
+| Net alpha decay under round-trip transaction cost (0–50 bps), one line per parameter window | [`output/cost_sensitivity.png`](output/cost_sensitivity.png) | [`output/cost_sensitivity.html`](output/cost_sensitivity.html) |
+
+Both interactive charts are single self-contained HTML files (~3.8 MB each, plotly + JS bundled inline) — they can be opened directly in any browser without a web server or internet connection.
 
 ## 6. Limitations and Future Work
 

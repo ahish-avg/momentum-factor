@@ -1,7 +1,7 @@
 library(targets)
 
 tar_option_set(
-  packages = c("DBI", "RMariaDB", "dplyr", "tidyr", "broom", "sandwich", "lmtest", "PerformanceAnalytics", "ggplot2")
+  packages = c("DBI", "RMariaDB", "dplyr", "tidyr", "broom", "sandwich", "lmtest", "PerformanceAnalytics", "ggplot2", "plotly", "htmlwidgets")
 )
 
 source("R/fns/db.R")
@@ -9,9 +9,8 @@ source("R/fns/regression.R")
 source("R/fns/cost_sensitivity.R")
 source("R/fns/plots.R")
 
-param_windows <- c("F3_S1", "F6_S1", "F12_S1", "F12_S3")
-
 list(
+  tar_target(param_windows, c("F3_S1", "F6_S1", "F12_S1", "F12_S3")),
   tar_target(port_returns_raw, load_port_returns()),
   tar_target(ff_factors_raw, load_ff_factors()),
 
@@ -56,6 +55,18 @@ list(
   tar_target(
     plot_cost_curve,
     plot_cost_sensitivity(cost_sensitivity),
+    format = "file"
+  ),
+
+  tar_target(
+    plot_robustness_plotly,
+    plot_robustness_table_plotly(robustness_table),
+    format = "file"
+  ),
+
+  tar_target(
+    plot_cost_curve_plotly,
+    plot_cost_sensitivity_plotly(cost_sensitivity),
     format = "file"
   )
 )

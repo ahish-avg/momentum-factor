@@ -1,6 +1,6 @@
 data/
-output/*.png
 *.Rproj.user/
+_targets/
 .Rhistory
 .RData
 .Rproj.user

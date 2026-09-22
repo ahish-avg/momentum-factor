@@ -98,7 +98,7 @@ momentum-factor/
 │   ├── fns/                 回归、风险指标、成本敏感性、绘图函数
 │   └── tests/                testthat 测试集：数据校验、前视偏差检查、边界情况
 ├── data/                    WRDS 导出数据（已加入 gitignore，需本地自行放入）
-├── output/                  生成的图表
+├── output/                  生成的图表（静态 PNG + 交互式 HTML）
 ├── .github/workflows/       CI：schema 冒烟测试 + testthat 套件
 └── README.md / README.zh-CN.md
 ```
@@ -117,6 +117,17 @@ momentum-factor/
 **核心发现。** Jegadeesh & Titman (1993) 经典的 12-1 建仓-跳过参数设定，在这份 1990-2025 年美股全市场样本上**未能复现**：赢家减输家组合的 alpha 为负、统计上不显著，且伴随超过 85% 的最大回撤。唯一在统计上显著（Newey-West 标准误下达到 1% 显著性水平）、且在经济意义上对交易成本足够稳健的参数配置，是较短的**6 个月建仓、跳过 1 个月**窗口。
 
 一项补充诊断分析（按持仓期内的月份序号拆解组合收益）显示，动量效应集中出现在建仓后的头一到两个月——这几个月内赢家组合确实跑赢输家组合——但随后在 12 个月持仓期的剩余时间里迅速衰减，甚至频繁反转。持仓窗口越长，就会把越大比例的衰减/反转期平均进最终收益，这足以完全抵消 12 个月窗口设定下早期积累的正 alpha。这一现象被作为一项实质性研究发现予以报告，而非数据或实现层面的瑕疵；它与文献中已有充分记录的"动量崩溃"（momentum crash）与衰减动态高度一致，不过按子区间或市场环境做正式拆解，留作后续工作（见第 6 节）。
+
+### 5.1 图表
+
+每张图均提供静态版（PNG）与交互版（自包含 HTML，鼠标悬停可查看精确数值）：
+
+| 图表 | 静态版 | 交互版 |
+|---|---|---|
+| 各参数窗口下赢家减输家组合 alpha，含 Newey-West 95% 置信区间 | [`output/robustness_alpha.png`](output/robustness_alpha.png) | [`output/robustness_alpha.html`](output/robustness_alpha.html) |
+| 不同往返交易成本（0–50 基点）下的净 alpha 衰减曲线，每条线对应一个参数窗口 | [`output/cost_sensitivity.png`](output/cost_sensitivity.png) | [`output/cost_sensitivity.html`](output/cost_sensitivity.html) |
+
+两个交互图表均为单一自包含 HTML 文件（各约 3.8 MB，plotly 及 JS 依赖已内联打包），可直接用任意浏览器打开，无需 Web 服务器，也无需联网。
 
 ## 6. 局限与未来工作
 
