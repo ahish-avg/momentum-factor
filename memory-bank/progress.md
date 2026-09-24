@@ -3,18 +3,25 @@
 ## 已完成
 - [x] SQL 管线 01-05（schema / 加载 / 信号 / 组合 / 换手）在 MySQL 8 实测通过
 - [x] R targets 管线：FF3 + Newey-West 回归、风险指标、交易成本敏感性
-- [x] 15 项 testthat 用例通过（含独立重算的前视偏差检查）
+- [x] testthat 用例通过（实测 8 个用例 / 13-14 个断言；含独立重算的前视偏差检查）
 - [x] 代码审查发现并修复 `sql/04_portfolios.sql` 两层平均聚合偏差（改单层平均）
 - [x] SQL/R 注释中译英
 - [x] 学术双语 README（`README.md` + `README.zh-CN.md`）
 - [x] GitHub 仓库创建并推送：https://github.com/ahish-avg/momentum-factor
 - [x] 交互式 plotly 图表（`output/robustness_alpha.html`、`output/cost_sensitivity.html`，各约 3.8MB 自包含）
-- [x] 静态 PNG 纳入 git 追踪并推送
+- [x] 静态 PNG 纳入 git 追踪并推送（原 `.gitignore` 误将 `output/*.png` 排除）
 - [x] README 双语新增 §5.1 图表小节
-- [x] 管线幂等性验证（二次运行 19 skipped / 0 completed）
+- [x] 管线幂等性验证（二次运行全部 skipped）
+- [x] 初始化 memory-bank（6 文件）
+- [x] **CI 修复**：定位 renv 因缺 `libglpk-dev` 等系统库而失败的根因；补 apt 依赖
+- [x] **CI 修复**：`_targets.R` 移至根目录，使 README 承诺的 `tar_make()` 真实可用
+- [x] **CI 修复**：新增合成数据生成器，CI 首次能真正跑完整管线（此前全程 skip）
+- [x] **CI 修复**：`plots.R` 改为按需创建 `output/` 目录
+- [x] **文档纠错**：README 测试数 15 → 8（实测值）
+- [x] 本地隔离库 `momentum_factor_ci` 全流程验证通过（SQL 01-05 + 8 测试 + tar_make）
 
 ## 进行中
-（无）
+- [ ] 推送并确认 GitHub Actions repro 工作流转绿
 
 ## 待办
 - [ ] 可选：GitHub Pages 托管交互图表

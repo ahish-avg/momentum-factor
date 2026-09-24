@@ -93,13 +93,13 @@ momentum-factor/
 │   ├── 03_signal.sql        动量信号计算（4 组参数窗口）
 │   ├── 04_portfolios.sql    分位排序 + 重叠持仓期聚合
 │   └── 05_turnover.sql      换手率计算
+├── _targets.R               管线定义
 ├── R/
-│   ├── _targets.R           管线定义
 │   ├── fns/                 回归、风险指标、成本敏感性、绘图函数
-│   └── tests/                testthat 测试集：数据校验、前视偏差检查、边界情况
+│   └── tests/               testthat 测试集 + fixtures/ CI 用合成数据生成器
 ├── data/                    WRDS 导出数据（已加入 gitignore，需本地自行放入）
 ├── output/                  生成的图表（静态 PNG + 交互式 HTML）
-├── .github/workflows/       CI：schema 冒烟测试 + testthat 套件
+├── .github/workflows/       CI：在合成数据上完整运行 SQL + targets + testthat
 └── README.md / README.zh-CN.md
 ```
 
@@ -155,7 +155,9 @@ momentum-factor/
    targets::tar_make()
    testthat::test_dir("R/tests")
    ```
-   全部 15 项 `testthat` 用例在真实数据库上均已通过验证，包括一项独立重算的前视偏差检查，以及边界条件测试（历史长度不足的股票被正确排除；`holding_batches` 无重复计入）。
+   全部 8 项 `testthat` 用例在真实数据库上均已通过验证，包括一项独立重算的前视偏差检查，以及边界条件测试（历史长度不足的股票被正确排除；`holding_batches` 无重复计入）。
+
+   第 2-4 步正是 CI 每次推送时所执行的内容，唯一区别在于：由于真实 WRDS 数据受再分发限制，CI 用 `Rscript R/tests/fixtures/make_fixtures.R` 生成的确定性合成面板，替换了被 gitignore 的导出文件。该合成数据刻意内嵌了真实数据所能触发的各类边界情形——必须被股票范围过滤排除的 ETF 行、必须不产生 `F12_S1` 信号的短历史证券、以及必须被折叠去重的完全重复 `(permno, mth)` 行——因此 CI 跑的是与真实运行完全相同的 SQL、targets 与 testthat 代码路径。合成数据跑出的数值结果不具任何意义，也从不对外报告；CI 验证的是机器能转，而不是数字说了什么。
 
 ## 8. 出彩清单
 

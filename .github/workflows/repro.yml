@@ -23,6 +23,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+          --default-authentication-plugin=mysql_native_password
 
     env:
       MOMENTUM_DB_HOST: 127.0.0.1
@@ -34,26 +35,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renv::restore() compiles from source when no binary is available.
+      # igraph needs libglpk, fs needs cmake, knitr needs pandoc; without
+      # these the restore step fails and the whole job goes red before any
+      # test runs. Install them up front rather than letting the failure
+      # surface as an obscure dyn.load error.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            libglpk-dev \
+            libmariadb-dev \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libxml2-dev \
+            pandoc
+
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
       - name: Set up renv
         uses: r-lib/actions/setup-renv@v2
 
-      - name: Load SQL schema and fixtures (sample data)
+      # LOAD DATA LOCAL INFILE needs local_infile enabled on BOTH the server
+      # (this step) and the client (--local-infile=1 below).
+      - name: Enable local_infile on MySQL server
+        run: |
+          mysql -h127.0.0.1 -uroot -proot \
+            -e "SET GLOBAL local_infile=1; SELECT @@local_infile;"
+
+      - name: Generate synthetic CI fixtures
+        run: Rscript R/tests/fixtures/make_fixtures.R
+
+      - name: Run SQL pipeline (schema -> load -> signal -> portfolios -> turnover)
         run: |
           mysql -h127.0.0.1 -uroot -proot momentum_factor < sql/01_schema.sql
-        # NOTE: 02_load_wrds.sql requires local WRDS export CSVs which are gitignored
-        # (data/ not committed). CI uses a lightweight fixture loader for schema-only
-        # smoke tests; full pipeline run requires local WRDS CSVs — see README.
+          mysql -h127.0.0.1 -uroot -proot --local-infile=1 momentum_factor < sql/02_load_wrds.sql
+          mysql -h127.0.0.1 -uroot -proot momentum_factor < sql/03_signal.sql
+          mysql -h127.0.0.1 -uroot -proot momentum_factor < sql/04_portfolios.sql
+          mysql -h127.0.0.1 -uroot -proot momentum_factor < sql/05_turnover.sql
 
       - name: Run testthat suite
         run: Rscript -e 'testthat::test_dir("R/tests")'
 
-      - name: Run targets pipeline (if data available)
-        run: |
-          if [ -f data/crsp_monthly.csv ]; then
-            Rscript -e 'targets::tar_make()'
-          else
-            echo "No WRDS data present in CI — skipping full pipeline run (see README)."
-          fi
+      - name: Run targets pipeline
+        run: Rscript -e 'targets::tar_make()'

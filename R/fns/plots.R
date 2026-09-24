@@ -1,8 +1,19 @@
 # R/fns/plots.R
 # Plotting functions: parameter robustness comparison + transaction cost decay curve
+#
+# Each figure is produced in two formats from the same upstream data:
+#   plot_X()            -> static PNG  (ggplot2)
+#   plot_X_plotly()     -> interactive self-contained HTML (plotly)
+# Both write into output/, which is created on demand so the pipeline works
+# from a fresh clone even if the directory is absent.
+
+output_path <- function(filename) {
+  dir.create("output", showWarnings = FALSE, recursive = TRUE)
+  file.path("output", filename)
+}
 
 plot_robustness_table <- function(robustness_table) {
-  path <- "output/robustness_alpha.png"
+  path <- output_path("robustness_alpha.png")
   p <- ggplot2::ggplot(robustness_table, ggplot2::aes(x = param_window, y = estimate)) +
     ggplot2::geom_col(fill = "#2c7fb8") +
     ggplot2::geom_errorbar(
@@ -19,7 +30,7 @@ plot_robustness_table <- function(robustness_table) {
 }
 
 plot_robustness_table_plotly <- function(robustness_table) {
-  path <- "output/robustness_alpha.html"
+  path <- output_path("robustness_alpha.html")
   p <- plotly::ggplotly(
     ggplot2::ggplot(robustness_table, ggplot2::aes(x = param_window, y = estimate)) +
       ggplot2::geom_col(fill = "#2c7fb8") +
@@ -38,7 +49,7 @@ plot_robustness_table_plotly <- function(robustness_table) {
 }
 
 plot_cost_sensitivity <- function(cost_sensitivity) {
-  path <- "output/cost_sensitivity.png"
+  path <- output_path("cost_sensitivity.png")
   curve <- cost_sensitivity$curve
   p <- ggplot2::ggplot(curve, ggplot2::aes(x = cost_bps, y = net_alpha, color = param_window)) +
     ggplot2::geom_line() +
@@ -53,7 +64,7 @@ plot_cost_sensitivity <- function(cost_sensitivity) {
 }
 
 plot_cost_sensitivity_plotly <- function(cost_sensitivity) {
-  path <- "output/cost_sensitivity.html"
+  path <- output_path("cost_sensitivity.html")
   curve <- cost_sensitivity$curve
   p <- plotly::ggplotly(
     ggplot2::ggplot(curve, ggplot2::aes(x = cost_bps, y = net_alpha, color = param_window)) +
