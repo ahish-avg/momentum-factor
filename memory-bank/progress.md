@@ -19,9 +19,11 @@
 - [x] **CI 修复**：`plots.R` 改为按需创建 `output/` 目录
 - [x] **文档纠错**：README 测试数 15 → 8（实测值）
 - [x] 本地隔离库 `momentum_factor_ci` 全流程验证通过（SQL 01-05 + 8 测试 + tar_make）
+- [x] **CI 转绿**：repro 工作流 12 步全通过（系统依赖 → renv → local_infile → 合成数据 → SQL 01-05 → testthat → tar_make）
+- [x] `renv::snapshot()` 收口 plotly/htmlwidgets（锁文件 77 → 103 包），修复"clone 后 restore 必崩"的可复现性缺陷
 
 ## 进行中
-- [ ] 推送并确认 GitHub Actions repro 工作流转绿
+（无）
 
 ## 待办
 - [ ] 可选：GitHub Pages 托管交互图表
